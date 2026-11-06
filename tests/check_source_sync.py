@@ -20,7 +20,7 @@ failed = False
 for name, path in sources.items():
     content = (ROOT / path).read_text(encoding="utf-8")
     # The generated installer uses JSON string literals for exact source contents.
-    pattern = r'install\\([^\\n]+?,\\s*"' + re.escape(name) + r'",\\s*"(?:ModuleScript|Script|LocalScript)",\\s*("(?:\\\\.|[^"\\\\])*")\\)'
+    pattern = r'install\([^\n]+?,\s*"' + re.escape(name) + r'",\s*"(?:ModuleScript|Script|LocalScript)",\s*("(?:\\.|[^"\\])*")\)'
     found = re.search(pattern, GEN)
     if not found:
         print(f"FAIL: missing embedded source: {name}")
