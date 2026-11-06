@@ -1,0 +1,105 @@
+{
+  "source": "ATV_Package.zip / ATV/ATV_Manifest.json; inspected from original upload",
+  "unit_note": "One Blender unit intended as one Roblox stud",
+  "blender_axes": {
+    "left_right": "X",
+    "forward": "-Y",
+    "up": "+Z"
+  },
+  "roblox_axes": {
+    "left_right": "X",
+    "forward": "-Z",
+    "up": "+Y"
+  },
+  "dimensions_blender": [
+    4.1001544,
+    6.1068153,
+    3.618576
+  ],
+  "wheel_centers_blender": {
+    "FL": [
+      -1.65,
+      -2.05,
+      1
+    ],
+    "FR": [
+      1.65,
+      -2.05,
+      1
+    ],
+    "RL": [
+      -1.65,
+      2.05,
+      1
+    ],
+    "RR": [
+      1.65,
+      2.05,
+      1
+    ]
+  },
+  "wheel_spin_axis_blender": [
+    1,
+    0,
+    0
+  ],
+  "shock_upper_blender": {
+    "FL": [
+      -0.58,
+      -2,
+      2.12
+    ],
+    "FR": [
+      0.58,
+      -2,
+      2.12
+    ],
+    "RL": [
+      -0.58,
+      2.1,
+      2.12
+    ],
+    "RR": [
+      0.58,
+      2.1,
+      2.12
+    ]
+  },
+  "shock_lower_blender": {
+    "FL": [
+      -1.11,
+      -2.035,
+      0.92
+    ],
+    "FR": [
+      1.11,
+      -2.035,
+      0.92
+    ],
+    "RL": [
+      -1.11,
+      2.065,
+      0.92
+    ],
+    "RR": [
+      1.11,
+      2.065,
+      0.92
+    ]
+  },
+  "steering_lower_pivot_blender": [
+    0,
+    -1.7,
+    1.55
+  ],
+  "chassis_origin_height_blender": 1.65,
+  "included_asset_files": [
+    "ATV.blend",
+    "ATV.fbx",
+    "ATV_Collision.fbx",
+    "ATV_Manifest.json",
+    "ATV_Hierarchy.txt",
+    "textures/*"
+  ],
+  "note": "Source binaries are not in GitHub; a cloud coding agent cannot use those binaries unless separately provided."
+}
