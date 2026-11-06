@@ -1,50 +1,95 @@
---!strict
+-- Server-authoritative four-wheel raycast ATV chassis.
+-- Parent this Script and Config, Engine, Steering, Suspension, Tires Modules
+-- directly under a Workspace vehicle model with Chassis, DriveSeat, Wheels.
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local vehicle = script.Parent
 local config = require(vehicle:WaitForChild("Config"))
 local Engine = require(vehicle:WaitForChild("Engine"))
 local Steering = require(vehicle:WaitForChild("Steering"))
-local seat = vehicle:WaitForChild("DriveSeat") :: VehicleSeat
-local chassis = vehicle:WaitForChild("Chassis") :: BasePart
-local wheels = vehicle:WaitForChild("WheelAssemblies")
-local throttle = 0
-local currentDriver: Player? = nil
-local function updateOwner()
-	local humanoid = seat.Occupant
-	local player: Player? = nil
-	if humanoid then
-		player = Players:GetPlayerFromCharacter(humanoid.Parent)
-	end
-	if player ~= currentDriver then
-		currentDriver = player
-		pcall(function()
-			chassis:SetNetworkOwner(player)
-		end)
+local Suspension = require(vehicle:WaitForChild("Suspension"))
+local Tires = require(vehicle:WaitForChild("Tires"))
+local seat = vehicle:WaitForChild("DriveSeat")
+local chassis = vehicle:WaitForChild("Chassis")
+local visuals = vehicle:WaitForChild("Wheels")
+local params = RaycastParams.new()
+params.FilterType = Enum.RaycastFilterType.Exclude
+params.FilterDescendantsInstances = {vehicle}
+params.RespectCanCollide = true
+local throttle, steeringAngle = 0, 0
+local spin = {FL = 0, FR = 0, RL = 0, RR = 0}
+local wheelState = {}
+for _, id in ipairs(config.WheelOrder) do
+	local attachment = Instance.new("Attachment")
+	attachment.Name = "WheelForce_" .. id
+	attachment.Position = config.WheelMounts[id]
+	attachment.Parent = chassis
+	local force = Instance.new("VectorForce")
+	force.Name = "ContactForce_" .. id
+	force.Attachment0 = attachment
+	force.ApplyAtCenterOfMass = false
+	force.RelativeTo = Enum.ActuatorRelativeTo.World
+	force.Parent = chassis
+	wheelState[id] = {
+		attachment = attachment,
+		force = force,
+		visual = visuals:WaitForChild("Wheel_" .. id)
+	}
+end
+-- With physics computed on the server, keep ownership on the server.
+pcall(function() chassis:SetNetworkOwner(nil) end)
+local function visualAt(item, cf)
+	if item:IsA("Model") then
+		item:PivotTo(cf)
+	elseif item:IsA("BasePart") then
+		item.CFrame = cf
 	end
 end
-seat:GetPropertyChangedSignal("Occupant"):Connect(updateOwner)
-updateOwner()
 RunService.Heartbeat:Connect(function(dt)
-	local occupied = seat.Occupant ~= nil and currentDriver ~= nil
-	local requested = if occupied then seat.ThrottleFloat else 0
-	local steeringInput = if occupied then seat.SteerFloat else 0
-	throttle = Engine.step(throttle, requested, dt, config.ThrottleResponse)
-	local velocity = chassis.AssemblyLinearVelocity.Magnitude
-	local targetAngle = Steering.angle(steeringInput, velocity, config)
-	for _, wheel in wheels:GetChildren() do
-		local motor = wheel:FindFirstChild("DriveMotor", true)
-		local steer = wheel:FindFirstChild("SteerServo", true)
-		if motor and motor:IsA("HingeConstraint") then
-			local limitedThrottle = if velocity > config.MaxSpeedStudsPerSecond and throttle > 0 then 0 else throttle
-			motor.AngularVelocity = -limitedThrottle * config.DriveAngularVelocity
-			motor.MotorMaxTorque = if occupied and math.abs(throttle) > 0.04 then config.MotorMaxTorque else config.BrakeTorque
-			motor.MotorMaxAcceleration = config.MotorMaxAcceleration
+	dt = math.clamp(dt, 1 / 240, 0.1)
+	local humanoid = seat.Occupant
+	local driver = humanoid and Players:GetPlayerFromCharacter(humanoid.Parent)
+	local t = driver and seat.ThrottleFloat or 0
+	local s = driver and seat.SteerFloat or 0
+	throttle = Engine.smooth(throttle, t, dt, config.ThrottleResponse)
+	local forwardSpeed = chassis.AssemblyLinearVelocity:Dot(chassis.CFrame.LookVector)
+	local targetSteer = Steering.target(s, forwardSpeed, config)
+	steeringAngle = Steering.step(steeringAngle, targetSteer, dt, config)
+	local mass = chassis.AssemblyMass
+	local driveForce, resistForce, braking = Engine.forces(throttle, forwardSpeed, mass, config)
+	local drivenCount = config.DriveMode == "AWD" and 4 or 2
+	local grounded = 0
+	for _, id in ipairs(config.WheelOrder) do
+		local w = wheelState[id]
+		local state = Suspension.sample(chassis, config.WheelMounts[id], params, config, mass)
+		local angle = (string.sub(id, 1, 1) == "F") and steeringAngle or 0
+		local tireForce = Vector3.zero
+		local speedAtWheel = forwardSpeed
+		if state.grounded then
+			grounded += 1
+			local isDriven = config.DriveMode == "AWD" or string.sub(id, 1, 1) == "R"
+			tireForce, speedAtWheel = Tires.compute(chassis, state.contact, state.normal,
+				state.load, state.material, angle, driveForce, resistForce, mass, drivenCount, isDriven, config)
 		end
-		if steer and steer:IsA("HingeConstraint") then
-			steer.TargetAngle = math.deg(targetAngle)
-		end
+		-- Application point includes the tire's contact patch for body pitch/roll.
+		local forcePoint = state.contact or state.center
+		w.attachment.Position = chassis.CFrame:PointToObjectSpace(forcePoint)
+		w.force.Force = state.springForce + tireForce
+		spin[id] += speedAtWheel / math.max(config.WheelRadius, 0.1) * dt
+		local yaw = math.rad(angle * config.VisualWheelSteeringMultiplier)
+		local cf = CFrame.new(state.center)
+			* chassis.CFrame.Rotation
+			* CFrame.Angles(0, yaw, 0)
+			* CFrame.Angles(0, 0, math.pi / 2)
+			* CFrame.Angles(0, spin[id], 0)
+		visualAt(w.visual, cf)
 	end
-	vehicle:SetAttribute("Speed", velocity)
-	vehicle:SetAttribute("RPM", Engine.rpm(velocity, throttle, config))
+	local rpm, gear = Engine.telemetry(throttle, forwardSpeed, config)
+	vehicle:SetAttribute("Speed", math.abs(forwardSpeed))
+	vehicle:SetAttribute("RPM", rpm)
+	vehicle:SetAttribute("Gear", gear)
+	vehicle:SetAttribute("GroundedWheels", grounded)
+	vehicle:SetAttribute("SteeringAngle", steeringAngle)
+	vehicle:SetAttribute("Braking", braking)
+	vehicle:SetAttribute("DriveMode", config.DriveMode)
 end)
